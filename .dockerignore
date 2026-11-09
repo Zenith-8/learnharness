@@ -1,0 +1,13 @@
+.git
+node_modules
+.next
+dist
+data
+.fresh-data
+real-data-extraction
+deploy/state
+deploy/.env
+auth.json
+*credentials.json*
+.env*
+*.log

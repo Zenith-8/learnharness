@@ -1,7 +1,8 @@
 /**
  * The composer's attach button (issue #285): the picker's twin of a file
  * drop. Picked files become quoted path chips at the caret through the
- * desktop bridge; the browser build explains instead. Same linkedom
+ * desktop bridge; a browser uploads them and chips the server paths
+ * (web-pwa fork). Same linkedom
  * shims as file-path-drop-zone.test.tsx (no native Selection there).
  */
 import React, { act } from "react";
@@ -19,7 +20,7 @@ import { quoteFilePath } from "../src/core/file-paths.ts";
 let cleanup: (() => Promise<void>) | undefined;
 afterEach(async () => { await cleanup?.(); cleanup = undefined; });
 
-async function fixture({ desktop = true } = {}) {
+async function fixture({ desktop = true, uploadPaths = undefined as string[] | undefined } = {}) {
 	const { window: win, document: doc } = parseHTML("<html><body><div id='root'></div></body></html>");
 	let active: Element = doc.body;
 	Object.defineProperty(doc, "activeElement", { get: () => active });
@@ -38,11 +39,17 @@ async function fixture({ desktop = true } = {}) {
 	let folderResult: string | null | Error = null;
 	let byteReads = 0;
 	let sends = 0;
+	const uploaded: string[] = [];
 	let value = "readthis";
 	const previous = new Map<string, PropertyDescriptor | undefined>();
 	for (const [name, next] of Object.entries({
 		React, window: win, document: doc, Node: win.Node, HTMLElement: win.HTMLElement, Element: win.Element,
 		Event: win.Event, CustomEvent: win.CustomEvent, IS_REACT_ACT_ENVIRONMENT: true, innerWidth: 1000, innerHeight: 800,
+		fetch: async (url: string, init: { body: FormData }) => {
+			if (!uploadPaths || url !== "/api/uploads") throw new Error("No network expected");
+			uploaded.push(...init.body.getAll("files").map((entry) => (entry as File).name));
+			return Response.json({ paths: uploadPaths });
+		},
 	})) {
 		previous.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
 		Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: next });
@@ -77,6 +84,8 @@ async function fixture({ desktop = true } = {}) {
 		get pickerClicks() { return pickerClicks; },
 		get folderCalls() { return folderCalls; },
 		get sends() { return sends; },
+		uploaded,
+		async settle() { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); }); },
 		setFolderResult(result: typeof folderResult) { folderResult = result; },
 		async choice(label: string) {
 			await act(async () => { Array.from(doc.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find((button) => button.textContent === label)!.click(); });
@@ -146,9 +155,9 @@ describe("composer attach button", () => {
 		assert.deepEqual(result, { paths: ["/notes/a.pdf"], skipped: 2 });
 	});
 
-	it("server render is the browser case: a disabled-looking paperclip between the input and Send", () => {
+	it("server render is the browser case: an enabled upload paperclip between the input and Send", () => {
 		const html = renderToStaticMarkup(<Composer busy={false} value="" onChange={() => {}} onSend={() => {}} onStop={() => {}} canSend={false} />);
-		assert.match(html, /aria-label="Attach files"[^>]*aria-disabled="true"|aria-disabled="true"[^>]*aria-label="Attach files"/);
+		assert.match(html, /aria-label="Attach files"[^>]*aria-disabled="false"|aria-disabled="false"[^>]*aria-label="Attach files"/);
 		const editor = html.indexOf("data-file-path-input");
 		const attach = html.indexOf('data-testid="attach-files"');
 		const send = html.indexOf('aria-label="Send"');
@@ -259,12 +268,27 @@ describe("composer attach button", () => {
 		assert.equal(f.sends, 0);
 	});
 
-	it("browser: the button stays inert and the picker never opens", async () => {
-		const f = await fixture({ desktop: false });
-		assert.equal(f.button.getAttribute("aria-disabled"), "true");
+	it("browser: the button opens the picker directly and uploaded server paths chip at the caret", async () => {
+		const paths = ["/data/uploads/20261108-aa/board.jpg", "/data/uploads/20261108-bb/week 3.pdf"];
+		const f = await fixture({ desktop: false, uploadPaths: paths });
+		assert.equal(f.button.getAttribute("aria-disabled"), "false");
+		f.caret(4);
 		await act(async () => { f.button.click(); });
-		assert.equal(f.pickerClicks, 0);
-		await f.pick([f.file("a.pdf", "/a.pdf")]);
+		assert.equal(f.pickerClicks, 1);
+		assert.equal(f.doc.querySelectorAll('[role="menuitem"]').length, 0, "no Folder choice in a browser");
+		await f.pick([f.file("board.jpg"), f.file("week 3.pdf")]);
+		await f.settle();
+		assert.deepEqual(f.uploaded, ["board.jpg", "week 3.pdf"]);
+		assert.equal(f.value, `read ${paths.map(quoteFilePath).join(" ")} this`);
+		assert.equal(f.sends, 0);
+	});
+
+	it("browser: a failed upload leaves the draft intact and explains", async () => {
+		const f = await fixture({ desktop: false });
+		await act(async () => { f.button.click(); });
+		await f.pick([f.file("a.pdf")]);
+		await f.settle();
 		assert.equal(f.value, "readthis");
+		assert.match(f.doc.querySelector('[data-testid="attachment-popup"]')?.textContent ?? "", /Upload failed/);
 	});
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, type RefObject } from "react";
+import { isPhone } from "@/components/mobile/phone";
 
 const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
@@ -16,10 +17,13 @@ export interface DockHeightMeasurements {
 	/** Null when collapsed, in chat mode, or showing malformed input. */
 	questionHeight: number | null;
 	questionPaddingHeight: number;
+	/** Column height kept clear above the dock (default 32px). Phones keep
+	 *  a real slice of the lesson visible and swipeable (web-pwa fork). */
+	transcriptReserve?: number;
 }
 
 export function dockHeightBudget(m: DockHeightMeasurements) {
-	const available = Math.max(m.columnHeight - 32, 0);
+	const available = Math.max(m.columnHeight - (m.transcriptReserve ?? 32), 0);
 	const viewportMaxHeight = Math.max(available - m.outsideHeight, 0);
 	const shellMaxHeight = Math.max(viewportMaxHeight - m.beforeShellHeight, 0);
 	const naturalHeight = m.beforeShellHeight + m.shellBorderHeight + m.contentHeight;
@@ -68,6 +72,7 @@ export function syncDockHeight(elements: DockHeightElements, expanded: boolean) 
 		questionPaddingHeight: questionStyle
 			? pixels(questionStyle.paddingTop) + pixels(questionStyle.paddingBottom)
 			: 0,
+		transcriptReserve: isPhone() ? Math.max(32, Math.round(column.clientHeight * 0.3)) : 32,
 	});
 	if (budget.questionMaxHeight === null) block.style.removeProperty("--dock-max-h");
 	else block.style.setProperty("--dock-max-h", budget.scrollWholeContent ? "none" : `${budget.questionMaxHeight}px`);

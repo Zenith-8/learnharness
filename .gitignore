@@ -19,3 +19,7 @@ xai-credentials.json*
 
 # dev-fresh launcher scratch (fresh-user sim): disposable per launch
 .fresh-data/
+
+# web-pwa deploy: local compose state and secrets
+deploy/state/
+deploy/.env

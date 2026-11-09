@@ -14,7 +14,7 @@ afterEach(async () => { await cleanup?.(); cleanup = undefined; });
 
 /** No native DataTransfer/Selection in linkedom. These shims exercise React's
  * real bubbling handlers and the editor's logical caret contract, not OS drag. */
-async function fixture({ desktop = true, claimed = true } = {}) {
+async function fixture({ desktop = true, claimed = true, uploadPaths = undefined as string[] | undefined } = {}) {
 	const { window: win, document: doc } = parseHTML("<html><body><div id='root'></div></body></html>");
 	let active: Element = doc.body;
 	Object.defineProperty(doc, "activeElement", { get: () => active });
@@ -31,6 +31,7 @@ async function fixture({ desktop = true, claimed = true } = {}) {
 	const appends: string[] = [];
 	let byteReads = 0;
 	let uploads = 0;
+	const uploadedNames: string[] = [];
 	let submits = 0;
 	let keys = 0;
 	let value = "readthis";
@@ -44,7 +45,12 @@ async function fixture({ desktop = true, claimed = true } = {}) {
 	for (const [name, next] of Object.entries({
 		React, window: win, document: doc, Node: win.Node, HTMLElement: win.HTMLElement, Element: win.Element,
 		Event: win.Event, CustomEvent: win.CustomEvent, IS_REACT_ACT_ENVIRONMENT: true,
-		fetch: () => { uploads++; throw new Error("No network expected for file drops"); },
+		fetch: async (url: string, init: { body: FormData }) => {
+			uploads++;
+			if (!uploadPaths || url !== "/api/uploads") throw new Error("No network expected for file drops");
+			uploadedNames.push(...init.body.getAll("files").map((entry) => (entry as File).name));
+			return Response.json({ paths: uploadPaths });
+		},
 	})) {
 		previous.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
 		Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: next });
@@ -100,7 +106,9 @@ async function fixture({ desktop = true, claimed = true } = {}) {
 		return event;
 	}
 	return {
-		doc, editor, appends, resolved, file, transfer, event,
+		doc, editor, appends, resolved, file, transfer, event, uploadedNames,
+		get uploads() { return uploads; },
+		async settle() { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); }); },
 		get value() { return value; },
 		get status() { return doc.querySelector('[role="status"]')?.textContent ?? ""; },
 		focusEditor(offset: number) {
@@ -149,24 +157,33 @@ test("unfocused drop uses the dictation target registry, not the last focused ed
 	f.assertPathOnly();
 });
 
-test("browser drop prevents navigation, explains desktop-only local paths and never infers File.name", async () => {
-	const f = await fixture({ desktop: false });
-	const transfer = f.transfer([f.file("/not/a/backing/path.pdf")]);
+test("browser drop prevents navigation and uploads the files; their server paths enter the draft", async () => {
+	const f = await fixture({ desktop: false, uploadPaths: ["/data/uploads/20261108-abc/notes.pdf"] });
+	const transfer = f.transfer([f.file("notes.pdf")]);
 	const enter = await f.event("dragenter", transfer);
 	assert.equal(enter.defaultPrevented, true);
-	assert.match(f.doc.querySelector('[data-testid="file-path-drop-indicator"]')!.textContent!, /desktop app/);
+	assert.match(f.doc.querySelector('[data-testid="file-path-drop-indicator"]')!.textContent!, /Drop to upload files/);
 	const over = await f.event("dragover", transfer);
 	assert.equal(over.defaultPrevented, true);
 	assert.equal(transfer.dropEffect, "copy");
 	const drop = await f.event("drop", transfer);
 	assert.equal(drop.defaultPrevented, true);
-	assert.match(f.status, /Local file paths can only be attached in the desktop app/);
-	assert.match(f.status, /paste a full path instead/);
+	await f.settle();
+	assert.equal(f.uploads, 1);
+	assert.deepEqual(f.uploadedNames, ["notes.pdf"]);
+	assert.deepEqual(f.appends, [quoteFilePath("/data/uploads/20261108-abc/notes.pdf")]);
+	assert.equal(f.status, "");
 	assert.equal(f.doc.querySelector('[data-testid="file-path-drop-indicator"]'), null);
+	assert.deepEqual(f.resolved, []);
+});
+
+test("browser drop of only folders explains folders are desktop-only and uploads nothing", async () => {
+	const f = await fixture({ desktop: false, uploadPaths: [] });
+	await f.event("drop", f.transfer([f.file("course")], [0]));
+	assert.match(f.status, /Folders can only be attached in the desktop app/);
+	assert.equal(f.uploads, 0);
 	assert.equal(f.value, "readthis");
 	assert.deepEqual(f.appends, []);
-	assert.deepEqual(f.resolved, []);
-	f.assertPathOnly();
 });
 
 test("mixed files and directories retain one original path each in drop order; invalid paths are skipped", async () => {
@@ -241,7 +258,7 @@ test("nested enter/leave depth keeps the drop overlay until the zone is left; no
 	assert.ok(f.doc.querySelector('[data-testid="file-path-drop-indicator"]'));
 	await f.event("dragleave", transfer);
 	assert.equal(f.doc.querySelector('[data-testid="file-path-drop-indicator"]'), null);
-	await f.event("drop", transfer);
+	await f.event("drop", f.transfer([f.file("course")], [0]));
 	assert.notEqual(f.status, "");
 	await act(async () => { f.doc.querySelector<HTMLElement>('[aria-label="Dismiss attachment notice"]')!.click(); });
 	assert.equal(f.status, "");

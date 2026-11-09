@@ -39,6 +39,7 @@ import {
 	type Phase3,
 } from "@/src/core";
 import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-rail";
+import { plainEnterSubmits } from "@/components/mobile/phone";
 
 /**
  * The question dock — a pending quiz/ask REPLACES the chat composer: the
@@ -868,7 +869,7 @@ function QuestionDockForm({
 								}
 								// Chat convention: Enter submits, Shift+Enter is a newline;
 								// ⌘/Ctrl+Enter also submits (universal across the app).
-								if (e.key === "Enter" && (e.metaKey || e.ctrlKey || !e.shiftKey)) {
+								if (e.key === "Enter" && (e.metaKey || e.ctrlKey || (!e.shiftKey && plainEnterSubmits()))) {
 									e.preventDefault();
 									submit();
 								}
@@ -897,7 +898,7 @@ function QuestionDockForm({
 								// THE STANDARD CHORD (owner round 5, 2026-10-05): Enter
 								// submits, Shift+Enter is a newline, ⌘/Ctrl+Enter works
 								// too — identical to the practice dock and the composer.
-								if (e.key === "Enter" && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
+								if (e.key === "Enter" && ((!e.shiftKey && plainEnterSubmits()) || e.metaKey || e.ctrlKey)) {
 									e.preventDefault();
 									submit();
 								}
@@ -912,7 +913,7 @@ function QuestionDockForm({
 						/>
 					)}
 					<div className="flex items-center justify-between gap-2 p-1">
-						<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
+						<span aria-hidden className={`pl-1.5 text-xs text-muted-foreground${compactionRunning ? "" : " lh-enter-hint"}`}>
 								{compactionRunning ? "compacting session…" : "↵ submits · ⇧↵ newline"}
 						</span>
 						<Button

@@ -17,6 +17,7 @@ import { PathInput } from "@/components/path-input";
 import { AttachFilesButton } from "@/components/attach-files-button";
 import { SessionStarter } from "@/components/start-session";
 import type { TurnUsage } from "@/src/core";
+import { isPhone, plainEnterSubmits } from "@/components/mobile/phone";
 
 /**
  * Home — the knowledge graph is the main view, full-bleed edge to edge
@@ -269,13 +270,14 @@ export function Home({
 								dictation.cancel();
 								return;
 							}
-							if (e.key === "Enter" && !e.shiftKey) {
+							if (e.key === "Enter" && !e.shiftKey && plainEnterSubmits()) {
 								e.preventDefault();
 								void start();
 							}
 						}}
 						placeholder={mode === "practice" ? "What do you want to practice?" : "What do you want to learn?"}
-						autoFocus
+						// Phones: no keyboard popping up over the graph on every visit.
+						autoFocus={!isPhone()}
 						className="field-sizing-content lh-input max-h-48 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground"
 					/>
 					<AttachFilesButton editorRef={topicInputRef} />

@@ -1,0 +1,180 @@
+/*
+ * Installed-app and phone overrides (web-pwa fork).
+ *
+ * Kept in its own file and keyed to the app's stable data-testid hooks, so
+ * rebasing onto upstream rarely touches the same lines. Tablets and
+ * desktops keep the upstream layout; only the safe-area padding applies to
+ * every width (env() is 0 outside notched, standalone displays).
+ */
+
+:root {
+	--lh-tabbar-h: 3.5rem;
+}
+
+/* Notch / status bar (black-translucent standalone) and home indicator. */
+.lh-shell {
+	padding-top: env(safe-area-inset-top);
+	padding-bottom: env(safe-area-inset-bottom);
+	padding-left: env(safe-area-inset-left);
+	padding-right: env(safe-area-inset-right);
+}
+/* Pages size themselves h-dvh; inside the padded shell they must fill the
+   shell's content box instead, or their bottom docks slide under the
+   home indicator / tab bar. */
+.lh-shell .h-dvh {
+	height: 100%;
+}
+
+@media (max-width: 639px) {
+	/* ── Shell ────────────────────────────────────────────────────────── */
+
+	/* Room for the fixed tab bar; it hides while the keyboard is up. */
+	.lh-shell {
+		padding-bottom: calc(var(--lh-tabbar-h) + env(safe-area-inset-bottom));
+	}
+	.lh-typing .lh-shell {
+		padding-bottom: 0;
+	}
+
+	/* The tab bar replaces the header hamburger. */
+	.lh-sidebar-toggle {
+		display: none;
+	}
+
+	/* The session list becomes a full-screen panel above the page. */
+	[data-testid="sessions-sidebar"] {
+		transition: none !important;
+	}
+	[data-testid="sessions-sidebar"][aria-hidden="false"] {
+		position: fixed;
+		z-index: 40;
+		inset: 0 0 calc(var(--lh-tabbar-h) + env(safe-area-inset-bottom)) 0;
+		width: 100%;
+		padding-top: env(safe-area-inset-top);
+		background: var(--background);
+	}
+	[data-testid="sessions-sidebar"] > div {
+		width: 100%;
+		border-right: 0;
+	}
+
+	/* Thumb-sized rows and controls in the panel. */
+	[data-testid="new-session"],
+	[data-testid="new-session-practice"] {
+		min-height: 2.75rem;
+		font-size: 0.8125rem;
+	}
+	[data-testid="session-row"],
+	[data-testid="session-row-kbd"] {
+		min-height: 3.25rem;
+	}
+	[data-testid="session-search"] {
+		height: 2.25rem;
+	}
+	[data-testid="session-kind-filter"] button {
+		min-height: 2.25rem;
+	}
+	/* Settings has its own tab. */
+	[data-testid="settings-entry"] {
+		display: none;
+	}
+
+	/* ── Graph (home) ─────────────────────────────────────────────────── */
+
+	/* No hamburger to clear on the left: the control row spans the width,
+	   the search flexes, and the text buttons collapse to their icons. */
+	[data-testid="graph-chrome"] {
+		left: 0.5rem;
+		max-width: none;
+	}
+	[data-testid="graph-chrome"] > div:first-child > div:first-child {
+		width: auto;
+		flex: 1 1 auto;
+	}
+	[data-testid="open-chain-table"],
+	[data-testid="import-notes"] {
+		font-size: 0;
+		gap: 0;
+		min-width: 2.25rem;
+		justify-content: center;
+	}
+	[data-testid="open-chain-table"] svg,
+	[data-testid="import-notes"] svg {
+		width: 1rem;
+		height: 1rem;
+	}
+
+	/* ── Sessions ─────────────────────────────────────────────────────── */
+
+	/* The serif session title at desktop size truncates after a word. */
+	header .font-title.text-3xl {
+		font-size: 1.375rem;
+		line-height: 1.75rem;
+	}
+
+	/* Composer/dock toolbar: dictation is the phone's keyboard-free input,
+	   so it gets its own full-width row under the meter/mode and model
+	   pills instead of being squeezed between them. */
+	[data-testid="stats-bar"] {
+		flex-wrap: wrap;
+		row-gap: 0.5rem;
+	}
+	[data-testid="stats-bar"] > div:has([data-testid^="dictation-"]) {
+		order: 2;
+		flex-basis: 100%;
+	}
+	[data-testid="dictation-toggle"] {
+		height: 2.5rem;
+	}
+
+	/* ── Settings ─────────────────────────────────────────────────────── */
+
+	/* A full-screen sheet above the tab bar: section tabs scroll across
+	   the top, the section gets the whole width. */
+	[data-testid="settings-dialog"] {
+		position: fixed;
+		inset: env(safe-area-inset-top) 0 0 0;
+		width: 100%;
+		max-width: none;
+		height: auto;
+		max-height: none;
+		border-radius: 0;
+		border-width: 0;
+		padding-bottom: env(safe-area-inset-bottom);
+	}
+	[data-testid="settings-dialog"] > div:has(> [data-testid="settings-nav"]) {
+		flex-direction: column;
+	}
+	[data-testid="settings-nav"] {
+		width: auto;
+		flex-direction: row;
+		overflow-x: auto;
+		border-right: 0;
+		border-bottom: 1px solid var(--border);
+		scrollbar-width: none;
+	}
+	[data-testid="settings-nav"] > button {
+		flex-shrink: 0;
+		min-height: 2.5rem;
+	}
+}
+
+/* On a touch phone Return is a newline (components/mobile/phone.ts), so the
+   "↵ submits · ⇧↵ newline" hint would be wrong; the Submit button says it. */
+@media (max-width: 639px) and (pointer: coarse) {
+	.lh-enter-hint {
+		visibility: hidden;
+	}
+}
+
+/* iOS Safari zooms into any focused field under 16px; keep phones steady. */
+@supports (-webkit-touch-callout: none) {
+	@media (max-width: 639px) {
+		input,
+		textarea,
+		select,
+		[contenteditable="true"] {
+			font-size: max(16px, 1em);
+		}
+	}
+}

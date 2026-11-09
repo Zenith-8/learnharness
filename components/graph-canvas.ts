@@ -295,6 +295,11 @@ const PICKING_PAD = 10;
 
 /** Click vs drag threshold: pointer travel under this many px is a click. */
 const CLICK_SLOP = 4;
+/** Fingers are wider and jitter more than a cursor (web-pwa fork): a touch
+ *  tap gets a bigger pick pad and slop, so tapping a node selects it
+ *  instead of missing or reading as a tiny pan. */
+const TOUCH_PICKING_PAD = 22;
+const TOUCH_CLICK_SLOP = 10;
 /** Live-sim tuning — see the class doc comment. */
 const LIVE_ALPHA_DECAY = 0.05; // snappier anneal than the settle's 0.0228
 const DRAG_ALPHA_TARGET = 0.3; // d3-drag's own reheat constant
@@ -566,6 +571,8 @@ export class GraphCanvasRenderer {
 	private callbacks: RendererCallbacks;
 	private zoomBehavior: ZoomBehavior<HTMLCanvasElement, unknown>;
 	private transform: ZoomTransform = zoomIdentity;
+	/** The last press came from a finger (sizes the pick pad and slop). */
+	private touchInput = false;
 	/** Set once the first fit happens; the camera then survives setData. */
 	private hasFit = false;
 	/** Last-synced CSS size — the resize anchor computes the world point
@@ -934,7 +941,7 @@ export class GraphCanvasRenderer {
 			if (n) {
 				const moved =
 					this.dragOrigin !== null &&
-					Math.hypot(pos.x - this.dragOrigin.x, pos.y - this.dragOrigin.y) > CLICK_SLOP;
+					Math.hypot(pos.x - this.dragOrigin.x, pos.y - this.dragOrigin.y) > (this.touchInput ? TOUCH_CLICK_SLOP : CLICK_SLOP);
 				if (moved) {
 					// First real movement: reheat and glue the node to the cursor.
 					if (this.commitTimer) {
@@ -962,6 +969,7 @@ export class GraphCanvasRenderer {
 		// the right-pointerup must never read as a click (the detail card
 		// used to open under the menu).
 		if (e.button !== 0) return;
+		this.touchInput = e.pointerType === "touch";
 		const pos = this.eventPos(e);
 		const node = this.pickAt(pos.x, pos.y);
 		if (node && this.sim) {
@@ -1024,7 +1032,7 @@ export class GraphCanvasRenderer {
 		const pos = this.eventPos(e);
 		const moved = Math.hypot(pos.x - this.downPos.x, pos.y - this.downPos.y);
 		this.downPos = null;
-		if (moved > CLICK_SLOP) return; // that was a drag (pan), not a click
+		if (moved > (this.touchInput ? TOUCH_CLICK_SLOP : CLICK_SLOP)) return; // that was a drag (pan), not a click
 		const node = this.pickAt(pos.x, pos.y);
 		if (node) this.callbacks.onSelect(node.id, pos);
 		else this.callbacks.onStageClick();
@@ -1061,7 +1069,7 @@ export class GraphCanvasRenderer {
 		// nodeSize is world units now (2026-09-15): the on-screen hit radius
 		// is the disc's world radius × the camera zoom, plus the constant
 		// screen pad — the whole halo stays hit-testable.
-		const maxDist = this.settings.nodeSize * k + PICKING_PAD;
+		const maxDist = this.settings.nodeSize * k + (this.touchInput ? TOUCH_PICKING_PAD : PICKING_PAD);
 		const projected: { id: string; x: number; y: number }[] = [];
 		for (const n of this.data.nodes) {
 			if (this.visible && !this.visible.has(n.id)) continue;

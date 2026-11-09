@@ -51,6 +51,8 @@ const STORAGE_KEY = "lh:sidebar-open";
 import type { ChatGPTControlBridge, NativeSubscriptionControlBridge } from "@/src/core";
 import type { UpdateState } from "@/components/settings/update-settings.tsx";
 import { FilePathDropZone } from "@/components/file-path-drop-zone";
+import { isPhone, useIsPhone } from "@/components/mobile/phone";
+import { PhoneTabBar, type PhoneTab } from "@/components/mobile/tab-bar";
 const SIDEBAR_AUTOCLOSE = 928;
 
 // Module scope, guarded for SSR (the server has no navigator).
@@ -86,9 +88,10 @@ declare global {
 	}
 }
 
-const SidebarContext = createContext<{ open: boolean; toggle: () => void }>({
+const SidebarContext = createContext<{ open: boolean; toggle: () => void; setOpen: (open: boolean) => void }>({
 	open: false,
 	toggle: () => {},
+	setOpen: () => {},
 });
 
 export function useSidebar() {
@@ -131,8 +134,10 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 		void window.lh?.getZoom?.().then(setZoomVar);
 
 		const stored = localStorage.getItem(STORAGE_KEY);
-		// Default: open (first run introduces the sidebar).
-		setOpen(stored === null ? true : stored === "1");
+		// Default: open (first run introduces the sidebar). On a phone the
+		// sidebar is a full-screen panel behind the tab bar: always start
+		// closed, and phone toggles never overwrite the desktop preference.
+		setOpen(isPhone() ? false : stored === null ? true : stored === "1");
 		setMounted(true);
 		return () => off?.();
 	}, []);
@@ -155,6 +160,10 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 		// listener flips `narrow` and the sidebar appears. The preference
 		// persists like any other open, so a restart at a narrow width
 		// still auto-restores when widened.
+		if (isPhone()) {
+			setOpen((v) => !v);
+			return;
+		}
 		if (narrow && !open) {
 			localStorage.setItem(STORAGE_KEY, "0");
 			setOpen(true);
@@ -181,9 +190,10 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 	}, [toggle]);
 
 	return (
-		<SidebarContext.Provider value={{ open: open && !narrow, toggle }}>
-			{/* transitions gated on mount: no slide-in flash on page load */}
-			<div className={cn("flex h-dvh", mounted && "[&_.sidebar-motion]:transition-[width,margin,opacity]")}>{children}</div>
+		<SidebarContext.Provider value={{ open: open && !narrow, toggle, setOpen }}>
+			{/* transitions gated on mount: no slide-in flash on page load.
+			    lh-shell: safe-area + phone tab-bar padding (app/mobile.css). */}
+			<div className={cn("lh-shell flex h-dvh", mounted && "[&_.sidebar-motion]:transition-[width,margin,opacity]")}>{children}</div>
 		</SidebarContext.Provider>
 	);
 }
@@ -205,7 +215,7 @@ export function SidebarToggle() {
 	return (
 		<span
 			className={cn(
-				"sidebar-motion lh-no-drag relative flex h-9 shrink-0 overflow-hidden duration-200",
+				"sidebar-motion lh-sidebar-toggle lh-no-drag relative flex h-9 shrink-0 overflow-hidden duration-200",
 				open ? "w-0 -mr-3" : "w-9 mr-0 lh-closed-toggle",
 			)}
 		>
@@ -392,7 +402,8 @@ export type SessionKindFilter = "teach" | "all" | "practice";
 const KIND_FILTER_KEY = "lh:session-kind-filter";
 
 function SessionsSidebar() {
-	const { open, toggle } = useSidebar();
+	const { open, toggle, setOpen } = useSidebar();
+	const phone = useIsPhone();
 	const [chats, setChats] = useState<ChatListItem[] | null>(null);
 	const [query, setQuery] = useState("");
 	const [kindFilter, setKindFilter] = useState<SessionKindFilter>("all");
@@ -413,8 +424,9 @@ function SessionsSidebar() {
 	   message is sent (and that message becomes its title). Search: a
 	   client-side filter over the poll snapshot — no server round trip. */
 	const newSession = useCallback(() => {
+		if (isPhone()) setOpen(false);
 		router.push("/chat/new");
-	}, [router]);
+	}, [router, setOpen]);
 
 	/* FUZZY (owner round 8, 2026-10-05): subsequence match ranked by
 	 * fuzzyScore — prefix beats word-boundary beats scattered. Empty query
@@ -641,14 +653,39 @@ function SessionsSidebar() {
 	}, [kbdIndex]);
 
 	useEffect(() => {
-		if (!open) return;
+		// The phone tab bar needs the list while closed too (practice vs learn).
+		if (!open && !phone) return;
 		void refresh();
 		// Opening + navigation refetch; while open, the events channel owns
 		// freshness (S6) — no interval, nothing standing.
-	}, [open, pathname, refresh]);
+	}, [open, phone, pathname, refresh]);
+
+	/* Phone navigation (web-pwa fork): Learn and Practice open this list as a
+	   full-screen panel with that filter; tapping the lit tab again returns
+	   to the page underneath. Any navigation closes the panel. */
+	useEffect(() => { if (isPhone()) setOpen(false); }, [pathname, setOpen]);
+	const phoneTab: PhoneTab | null = (() => {
+		if (!phone) return null;
+		if (open) return kindFilter === "practice" ? "practice" : "learn";
+		if (pathname === "/") return "graph";
+		if (!pathname.startsWith("/chat")) return null;
+		const current = chats?.find((c) => pathname === `/chat/${c.id}`);
+		const practice = current ? current.kind === "practice" : window.location.search.includes("mode=practice");
+		return practice ? "practice" : "learn";
+	})();
+	const selectPhoneTab = (tab: PhoneTab) => {
+		if (tab === "settings") { openSettings(); return; }
+		if (tab === "graph") { setOpen(false); if (pathname !== "/") router.push("/"); return; }
+		if (open && phoneTab === tab) { setOpen(false); return; }
+		setFilter(tab === "practice" ? "practice" : "teach");
+		setOpen(true);
+	};
 
 	return (
+		<>
+		{phone && <PhoneTabBar active={phoneTab} onSelect={selectPhoneTab} />}
 		<aside
+			data-testid="sessions-sidebar"
 			className={cn("sidebar-motion shrink-0 overflow-hidden duration-200", open ? "w-72" : "w-0")}
 			aria-hidden={!open}
 		>
@@ -712,7 +749,7 @@ function SessionsSidebar() {
 					<button
 						type="button"
 						data-testid="new-session-practice"
-						onClick={() => router.push("/chat/new?mode=practice")}
+						onClick={() => { if (isPhone()) setOpen(false); router.push("/chat/new?mode=practice"); }}
 						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 					>
 						<DumbbellIcon className="size-3" />
@@ -832,6 +869,7 @@ function SessionsSidebar() {
 									kbdSelected={i === kbdIndex}
 									onOpen={() => {
 										setKbdIndex(null);
+										if (isPhone()) setOpen(false);
 										router.push(`/chat/${c.id}`);
 									}}
 									onContextMenu={(e) => openContext(e, c)}
@@ -941,6 +979,7 @@ function SessionsSidebar() {
 					onDeleted={onDeleted}
 				/>
 			</aside>
+		</>
 	);
 }
 

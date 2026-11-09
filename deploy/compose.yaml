@@ -1,0 +1,38 @@
+# LearnHarness on your tailnet: https://<TS_HOSTNAME>.<tailnet>.ts.net
+# Guide: docs/deploy-tailscale.md
+name: learnharness
+
+services:
+  tailscale:
+    image: tailscale/tailscale:v1.104
+    hostname: ${TS_HOSTNAME:-learnharness}
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: ${TS_HOSTNAME:-learnharness}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_USERSPACE: "true"
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./tailscale/serve.json:/config/serve.json:ro
+    restart: unless-stopped
+
+  learnharness:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: learnharness:web-pwa
+    # Shares the sidecar's network namespace; the app listens on 127.0.0.1
+    # only, so Tailscale Serve is the sole entry point.
+    network_mode: service:tailscale
+    depends_on:
+      - tailscale
+    volumes:
+      - ./state/data:/data
+      - ./state/secrets:/secrets
+      - claude-home:/home/node
+    restart: unless-stopped
+
+volumes:
+  tailscale-state:
+  claude-home:

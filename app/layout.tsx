@@ -1,12 +1,14 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Source_Sans_3 } from "next/font/google";
 import "katex/dist/katex.min.css";
 import "./globals.css";
+import "./mobile.css";
 import { AppShell, SidebarProvider } from "@/components/sidebar";
 import { ActivityProvider } from "@/components/activity-dock";
 import { ServerEventsProvider } from "@/components/server-events";
 import { AppearanceProvider } from "@/components/settings/appearance";
 import UpdateBanner from "@/components/update-banner";
+import RegisterServiceWorker from "@/components/pwa/register-service-worker";
 
 // Chrome = JetBrains Mono, teaching prose = Source Sans 3, titles = CMU
 // Serif (the bundled lh-cmu @font-face in globals.css — no CDN).
@@ -16,6 +18,20 @@ const prose = Source_Sans_3({ subsets: ["latin"], variable: "--font-sans3" });
 export const metadata: Metadata = {
 	title: "Learning Harness",
 	description: "A teacher agent with a memory — sessions, quizzes, and a knowledge graph of what you know.",
+	// Installable web app (web-pwa fork): app/manifest.ts + iOS home-screen.
+	appleWebApp: { capable: true, title: "LearnHarness", statusBarStyle: "black-translucent" },
+	icons: { icon: "/pwa/icon-192.png", apple: "/pwa/apple-touch-icon.png" },
+};
+
+// viewport-fit=cover lets the phone layout pad for the notch/home indicator
+// via env(safe-area-inset-*); resizes-content keeps docks above Android's
+// on-screen keyboard.
+export const viewport: Viewport = {
+	width: "device-width",
+	initialScale: 1,
+	viewportFit: "cover",
+	interactiveWidget: "resizes-content",
+	themeColor: "#141414",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -35,6 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 			</ServerEventsProvider>
 			{/* Auto-update banner (Wave C): fixed card, Electron-only pushes. */}
 			<UpdateBanner />
+			<RegisterServiceWorker />
 		</body>
 		</html>
 	);
